@@ -3,12 +3,6 @@ org 100h
 cmp [80h], 1
 jb NoArguments
 
-NoArguments:
-    mov dx, &NoArgumentsError
-    call PrintLine
-    ret
-
-NoArgumentsError: db 'Image path not specified$'
 
 call GetFilePath
 call OpenFile
@@ -18,6 +12,13 @@ call ReadFilePieceOfData
 call FindImageWidth
 
 ret
+
+NoArguments:
+    mov dx, &NoArgumentsError
+    call PrintLine
+    ret
+
+NoArgumentsError: db 'Image path not specified$'
 
 FindImageWidth:
     xor bx, bx
