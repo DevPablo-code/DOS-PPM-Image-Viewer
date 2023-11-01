@@ -40,7 +40,7 @@ CheckForComment:
     xor bx, bx
 
     .Loop:
-        cmp [si + bx], OAh
+        cmp [si + bx], 0Ah
         jz .Next
         cmp [si + bx], 23h
         jz .Comment
@@ -71,7 +71,11 @@ GetImageWidth:
 
     .EndLoop:
         mov [di], 0
-        
+        mov si, sp
+        push si
+        call StringToNumber
+        pop si
+        add sp, 5
 
 GetImageHeight:
 
@@ -233,7 +237,7 @@ StringToNumber:
         add ax, cx
 
         inc si
-        jmp_short .Loop
+        jmp .Loop
         
     .Exit:
         pop cx
