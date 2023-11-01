@@ -3,15 +3,81 @@ org 100h
 cmp [80h], 1
 jb NoArguments
 
+mov di, &FilePath
+call GetCmdArgument
 
-call GetFilePath
-call OpenFile
-call CheckP6Identifier
-call ReadFilePieceOfData
+mov dx, &FilePath
+mov di, &FileHandle
 
-call FindImageWidth
+call OpenFileRead
 
-ret
+CheckP6:
+    mov bx, FileHandle
+    mov cx, 2
+
+    sub sp, 2
+    mov dx, sp
+
+    call ReadBytesFromFile
+
+    pop dx
+
+    cmp dx, 3650h
+    jz .Success
+
+    mov dx, &P6FormatExpectedError
+    call PrintLine
+    ret
+
+    .Success:
+        mov dx, &P6FormatFound
+        call PrintLine
+
+CheckForComment:
+    call ReadBlockOfFile
+
+    mov si, &FileData
+    xor bx, bx
+
+    .Loop:
+        cmp [si + bx], OAh
+        jz .Next
+        cmp [si + bx], 23h
+        jz .Comment
+        
+        jmp GetImageWidth
+
+    .Comment
+        call SkipLine
+    .Next:
+        inc bx
+        cmp bx, ax
+        jmp .Loop
+
+GetImageWidth:
+    sub sp, 5
+    mov di, sp
+
+    .Loop:
+        mov dx, [si + bx]
+        cmp dx, 20h
+        jz .EndLoop
+
+        mov [di], dx
+
+        inc bx
+        inc di
+        jmp .Loop
+
+    .EndLoop:
+        mov [di], 0
+        
+
+GetImageHeight:
+
+
+Exit:
+    ret
 
 NoArguments:
     mov dx, &NoArgumentsError
@@ -20,118 +86,96 @@ NoArguments:
 
 NoArgumentsError: db 'Image path not specified$'
 
-FindImageWidth:
-    xor bx, bx
-    xor cx, cx
-    .Loop:
-        mov dx, [si + bx]
-        cmp dx, '#'
-        jz .Comment
-        cmp dx, 0Ah
-        jz .Next
-    
-    .Comment:
-        call SkipLineInFile
-    .Next:
-        inc bx
-        cmp bx, BytesRead
-        jbe .Loop
+P6FormatFound: db 'Binary format$'
+P6FormatExpectedError: db 'Binary format expected$'
 
-    
-    ret
-
-SkipLineInFile:
+SkipLine:
     .Loop:
         cmp [si + bx], 0Ah
-        jmp .ExitLoop
+        jmp .EndLoop
 
         inc bx
-        cmp bx, BytesRead
-        jbe .Loop
+        cmp bx, ax
+        jbe .Continue
+        call ReadBlockOfFile
+        xor bx, bx
 
-    .ExitLoop:
+        .Continue:
+            jmp .Loop
+
+    .EndLoop:
         ret
 
-ReadFilePieceOfData:
-    mov ah, 3Fh
-    mov bx, FileHandle
-    mov cx, 400h
-    use_ds
+ReadBlockOfFile:
+    mov cx, 1024
     mov dx, &FileData
 
-    int 21h
+    call ReadBytesFromFile
 
-    jz .Success
+    mov BytesRecentlyRead, ax
 
     ret
 
-.Success:
-    cmp ax, 0
-    jz .EOF
-
-    mov dx, &ReadSuccess
-    call PrintLine
-    ret
-.EOF:
-    mov dx, &ReadReachedEOF
-    call PrintLine
-    ret
-
-ReadSuccess: db 'Bytes has been successfully read$'
-ReadReachedEOF: db 'Reached end of file$'
-
-CheckP6Identifier:
+ReadBytesFromFile:
     mov ah, 3Fh
-    mov bx, FileHandle
-    mov cx, 2
-
-    sub sp, 2
-    mov dx, sp
-
     int 21h
+    jb .Fail
 
-    pop dx
+    .Success:
+        cmp ax, 0
+        jz .EOF
+        mov dx, &FileReadSuccessMessage
+        call PrintLine
+        ret
+    .Fail:
+        mov dx, &ReadFromFileError
+        call PrintLine
+        jmp Exit
+        ret
+    .EOF:
+        mov dx, &ReachedEOFMessage
+        call PrintLine
+        ret
 
-    cmp dx, 3650h
+FileReadSuccessMessage: db 'Successfully read from file$'
+ReachedEOFMessage: db 'Reached end of file$'
+ReadFromFileError: db 'Failed to read file$'
 
-    jnz P6FormatExpected
+;On entry:	AH = 3Dh
+;AL = access mode, where:
+;0 = read access
+;1 = write access
+;2 = read/write access
+;All other bits off
+;DS.DX = Segment:offset of ASCIIZ file specification
+;Returns:	Carry clear if successful: AX = file handle
 
-    mov dx, &P6FormatSuccess
-    call PrintLine
-
-    ret
-
-P6FormatExpected:
-    mov dx, &P6FormatExpectedError
-    call PrintLine
-    ret
-
-P6FormatExpectedError: db 'Byte PPM format expected$'
-P6FormatSuccess: db 'Found PPM Byte$'
-
-OpenFile:
+OpenFileRead:
     mov ah, 3Dh
     mov al, 0
-    mov dx, &FilePath
-
+    
     int 21h
 
-    jb CantOpenFile
+    jb .Fail
 
-    mov FileHandle, ax
+    mov [di], ax
 
     ret
 
-CantOpenFile:
-    mov dx, &CantOpenFileError
+.Fail:
+    mov dx, &OpenFileFail
     call PrintLine
-    ret
+    jmp Exit
 
-CantOpenFileError: db 'Cant open file$'
+OpenFileFail: db 'Failed to open file$'
+OpenFileSuccess: db 'File opened successfully$'
 
-GetFilePath:
+GetCmdArgument:
+    push si
+    push bx
+
     mov si, 82h
-    mov di, &FilePath
+
     xor bx, bx
 
     .Loop:
@@ -150,6 +194,8 @@ GetFilePath:
     .EndLoop:
         mov [di + bx], '$'
 
+    pop bx
+    pop si
     ret
 
 PrintLine:
@@ -170,26 +216,31 @@ PrintLine:
     ret
 
 StringToNumber:
-    push bx
+        push bx
+        push dx
 
-    xor ax, ax
-.Loop:
-    mov dx, [si]
-    cmp dx, 0
-    jz .Exit
+        xor ax, ax
+        xor cx, cx
 
-    sub dx, 30h
-    mov bx, 10
-    mul bx
-    add ax, dx
+        mov bx, 10
+    .Loop:
+        mov cl, [si]
+        cmp cl, 0
+        jz .Exit
 
-    add si, 1
-    jmp_short .Loop
-    
-.Exit:
-    pop bx
+        sub cx, 30h
+        mul bx
+        add ax, cx
 
-FilePath: db 126 @ 0
+        inc si
+        jmp_short .Loop
+        
+    .Exit:
+        pop cx
+        pop bx
+        ret
+
+FilePath: db 127 @ 0
 FileHandle: dw 0
-FileData: db 512 @ 0
-BytesRead: db 4
+FileData: db 1024 @ 0
+BytesRecentlyRead: dw 0
