@@ -1,5 +1,3 @@
-org 100h
-
 mov si, &NumberString
 call StringToNumber
 
