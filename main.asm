@@ -142,16 +142,14 @@ GetMaxColorValue:
         mov MaxColorValue, ax
 
 EnterGraphicsMode:
-    ;mov ah, 00h
-    ;mov al, 13h
-    ;int 10h
+    mov ah, 00h
+    mov al, 13h
+    int 10h
 
 DrawImage:
     xor cx, cx
     xor dx, dx
-
-    mov bx, 398
-
+    
     .Loop: 
         push cx
         push dx
@@ -174,12 +172,17 @@ DrawImage:
         int 10h
 
         pop bx
+
         add bx, 3h
         cmp bx, BytesRecentlyRead 
         jnb WaitForKeypress
+
+    .NextColumn:
         inc cx
         cmp cx, ImageWidth
         jb .Loop
+
+    .NextRow:
         xor cx, cx
         inc dx
         cmp dx, ImageHeight
@@ -245,7 +248,7 @@ ReadBlockOfFile:
     push cx
     push dx
 
-    mov cx, 400
+    mov cx, 400h
     mov dx, &FileData
 
     call ReadBytesFromFile
