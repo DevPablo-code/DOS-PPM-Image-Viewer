@@ -1,10 +1,10 @@
 org 100h
 
-cmp [80h], 1
-jb NoArguments
+;cmp [80h], 1
+;jb NoArguments
 
-mov di, &FilePath
-call GetCmdArgument
+;mov di, &FilePath
+;call GetCmdArgument
 
 mov dx, &FilePath
 mov di, &FileHandle
@@ -47,7 +47,7 @@ CheckForComment:
         
         jmp GetImageWidth
 
-    .Comment
+    .Comment:
         call SkipLine
     .Next:
         inc bx
@@ -59,11 +59,11 @@ GetImageWidth:
     mov di, sp
 
     .Loop:
-        mov dx, [si + bx]
-        cmp dx, 20h
+        mov dl, [si + bx]
+        cmp dl, 20h
         jz .EndLoop
 
-        mov [di], dx
+        mov [di], dl
 
         inc bx
         inc di
@@ -71,14 +71,128 @@ GetImageWidth:
 
     .EndLoop:
         mov [di], 0
+        inc bx
+
         mov si, sp
-        push si
+
         call StringToNumber
-        pop si
+
+        mov si, &FileData
+
         add sp, 5
 
-GetImageHeight:
+        mov ImageWidth, ax
 
+GetImageHeight:
+    sub sp, 5
+    mov di, sp
+
+    .Loop:
+        mov dl, [si + bx]
+        cmp dl, 0Ah
+        jz .EndLoop
+
+        mov [di], dl
+
+        inc bx
+        inc di
+        jmp .Loop
+
+    .EndLoop:
+        mov [di], 0
+        inc bx
+
+        mov si, sp
+
+        call StringToNumber
+
+        mov si, &FileData
+        
+        add sp, 5
+
+        mov ImageHeight, ax
+
+GetMaxColorValue:
+    sub sp, 5
+    mov di, sp
+
+    .Loop:
+        mov dl, [si + bx]
+        cmp dl, 0Ah
+        jz .EndLoop
+
+        mov [di], dl
+
+        inc bx
+        inc di
+        jmp .Loop
+
+    .EndLoop:
+        mov [di], 0
+        inc bx
+
+        mov si, sp
+
+        call StringToNumber
+
+        mov si, &FileData
+        
+        add sp, 5
+
+        mov MaxColorValue, ax
+
+EnterGraphicsMode:
+    ;mov ah, 00h
+    ;mov al, 13h
+    ;int 10h
+
+DrawImage:
+    xor cx, cx
+    xor dx, dx
+
+    mov bx, 398
+
+    .Loop: 
+        push cx
+        push dx
+        xor ax, ax
+        mov al, [si + bx]
+        mov cl, [si + bx + 1]
+        mov dl, [si + bx + 2]
+
+        call GetAveragedColor
+        call MapColorTo16Shades
+
+        pop dx
+        pop cx
+
+        push bx
+
+        mov ah, 0ch
+        mov bh, 0
+
+        int 10h
+
+        pop bx
+        add bx, 3h
+        cmp bx, BytesRecentlyRead 
+        jnb WaitForKeypress
+        inc cx
+        cmp cx, ImageWidth
+        jb .Loop
+        xor cx, cx
+        inc dx
+        cmp dx, ImageHeight
+        jb .Loop
+        
+WaitForKeypress:
+    mov ah, 0h
+    int 16h
+
+ReturnToTextMode:
+    mov ah, 00h
+    mov al, 03h
+    int 10h
 
 Exit:
     ret
@@ -93,10 +207,27 @@ NoArgumentsError: db 'Image path not specified$'
 P6FormatFound: db 'Binary format$'
 P6FormatExpectedError: db 'Binary format expected$'
 
+MapColorTo16Shades:
+    mov ah, 0h
+    mov dl, 16
+    div dl
+    add ax, dl
+
+    ret
+
+GetAveragedColor:
+    add ax, dl
+    add ax, cl
+    mov dl, 3
+
+    div dl
+
+    ret
+
 SkipLine:
     .Loop:
         cmp [si + bx], 0Ah
-        jmp .EndLoop
+        jz .EndLoop
 
         inc bx
         cmp bx, ax
@@ -111,12 +242,18 @@ SkipLine:
         ret
 
 ReadBlockOfFile:
-    mov cx, 1024
+    push cx
+    push dx
+
+    mov cx, 400
     mov dx, &FileData
 
     call ReadBytesFromFile
 
     mov BytesRecentlyRead, ax
+
+    pop dx
+    pop cx
 
     ret
 
@@ -232,7 +369,7 @@ StringToNumber:
         cmp cl, 0
         jz .Exit
 
-        sub cx, 30h
+        sub cl, 30h
         mul bx
         add ax, cx
 
@@ -244,7 +381,10 @@ StringToNumber:
         pop bx
         ret
 
-FilePath: db 127 @ 0
+FilePath: db 'test2.ppm$'
 FileHandle: dw 0
 FileData: db 1024 @ 0
 BytesRecentlyRead: dw 0
+ImageWidth: dw 0
+ImageHeight: dw 0
+MaxColorValue: dw 0
