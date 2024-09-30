@@ -1,10 +1,10 @@
 org 100h
 
-;cmp [80h], 1
-;jb NoArguments
+cmp [80h], 1
+jb NoArguments
 
-;mov di, &FilePath
-;call GetCmdArgument
+mov di, &FilePath
+call GetCmdArgument
 
 mov dx, &FilePath
 mov di, &FileHandle
@@ -34,7 +34,10 @@ CheckP6:
         call PrintLine
 
 CheckForComment:
+    push dx
+    mov dx, &FileData
     call ReadBlockOfFile
+    pop dx
 
     mov si, &FileData
     xor bx, bx
@@ -142,9 +145,11 @@ GetMaxColorValue:
         mov MaxColorValue, ax
 
 EnterGraphicsMode:
-    mov ah, 00h
-    mov al, 13h
+    push bx
+    mov ax, 4F02h
+    mov bx, 105h
     int 10h
+    pop bx
 
 DrawImage:
     xor cx, cx
@@ -166,7 +171,7 @@ DrawImage:
 
         push bx
 
-        mov ah, 0ch
+        mov ah, 0Ch
         mov bh, 0
 
         int 10h
@@ -174,8 +179,53 @@ DrawImage:
         pop bx
 
         add bx, 3h
-        cmp bx, BytesRecentlyRead 
-        jnb WaitForKeypress
+        mov ax, BytesRecentlyRead
+        sub ax, bx
+        cmp ax, 3h
+        jnb .NextColumn
+
+        cmp ax, 0h
+        jbe .LoadNextBlock
+
+
+    .LoadNextBlockPartially:
+        push dx
+        push cx
+
+        mov di, [si + bx]
+        mov FileData, di
+
+        mov dx, &FileData
+        add dx, ax
+
+        mov bx, FileHandle
+        mov cx, BlockSize
+        sub cx, ax
+
+        push ax
+        call ReadBytesFromFile
+        cmp ax, 0h
+        jz WaitForKeypress
+        pop ax
+        add BytesRecentlyRead, ax
+        xor bx, bx
+
+        pop cx
+        pop dx  
+
+        jmp .NextColumn
+
+    .LoadNextBlock: 
+        push dx
+
+        mov dx, &FileData
+            
+        call ReadBlockOfFile
+        cmp ax, 0h
+        jz WaitForKeypress
+        xor bx, bx
+
+        pop dx
 
     .NextColumn:
         inc cx
@@ -235,7 +285,10 @@ SkipLine:
         inc bx
         cmp bx, ax
         jbe .Continue
+        push dx
+        mov dx, &FileData
         call ReadBlockOfFile
+        pop dx
         xor bx, bx
 
         .Continue:
@@ -245,18 +298,16 @@ SkipLine:
         ret
 
 ReadBlockOfFile:
+    push bx
     push cx
-    push dx
 
-    mov cx, 400h
-    mov dx, &FileData
+    mov bx, FileHandle
+    mov cx, BlockSize
 
     call ReadBytesFromFile
 
-    mov BytesRecentlyRead, ax
-
-    pop dx
     pop cx
+    pop bx
 
     ret
 
@@ -268,8 +319,9 @@ ReadBytesFromFile:
     .Success:
         cmp ax, 0
         jz .EOF
-        mov dx, &FileReadSuccessMessage
-        call PrintLine
+        mov BytesRecentlyRead, ax
+        ;mov dx, &FileReadSuccessMessage
+        ;call PrintLine
         ret
     .Fail:
         mov dx, &ReadFromFileError
@@ -277,8 +329,8 @@ ReadBytesFromFile:
         jmp Exit
         ret
     .EOF:
-        mov dx, &ReachedEOFMessage
-        call PrintLine
+        ;mov dx, &ReachedEOFMessage
+        ;call PrintLine
         ret
 
 FileReadSuccessMessage: db 'Successfully read from file$'
@@ -384,10 +436,11 @@ StringToNumber:
         pop bx
         ret
 
-FilePath: db 'test2.ppm$'
-FileHandle: dw 0
-FileData: db 1024 @ 0
-BytesRecentlyRead: dw 0
 ImageWidth: dw 0
 ImageHeight: dw 0
 MaxColorValue: dw 0
+BlockSize: dw 400h
+FilePath: db 127 @ 0
+FileHandle: dw 0
+BytesRecentlyRead: dw 0
+FileData: db 401h @ 0
